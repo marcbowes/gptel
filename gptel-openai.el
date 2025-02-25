@@ -29,7 +29,7 @@
 
 (defvar gptel-model)
 (defvar gptel-stream)
-(defvar gptel-use-curl)
+(defvar gptel-curl-path)
 (defvar gptel-backend)
 (defvar gptel-temperature)
 (defvar gptel-max-tokens)
