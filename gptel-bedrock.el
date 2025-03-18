@@ -383,10 +383,10 @@ MAX-ENTRIES is the maximum number of prompts to include."
         (include-media (and gptel-track-media (gptel--model-capable-p 'media))))
     (cl-flet ((capture-prompt (role beg end)
                 (let* ((content (if include-media
-                                 (gptel-bedrock--parse-multipart
-                                  (gptel--parse-media-links major-mode beg end))
-                                 `[(:text ,(gptel--trim-prefixes
-                                           (buffer-substring-no-properties beg end)))]))
+                                    (gptel-bedrock--parse-multipart
+                                     (gptel--parse-media-links major-mode beg end))
+                                  `[(:text ,(gptel--trim-prefixes
+                                             (buffer-substring-no-properties beg end)))]))
                        (prompt (list :role role :content content)))
                   (push prompt prompts))))
 
@@ -434,29 +434,29 @@ The input is a list of text and media plists of the form:
 
 The output is a vector of entries in Bedrock API format."
   (thread-last parts
-    (cl-maplist
-     (lambda (tail)
-       (let* ((part (car tail))
-              (text (plist-get part :text))
-              (mime (plist-get part :mime))
-              (media (plist-get part :media))
-              format)
-         (cond
-          (text (when (or (eq part (car parts)) (null (cdr tail)))
-                  (setq text (gptel--trim-prefixes text)))
-                (unless (string-empty-p text)
-                  `(:text ,text)))
-          (media
-           (cond
-            ((setq format (assoc mime gptel-bedrock--image-formats))
-             `(:image (:format ,(cdr format) :source (:bytes ,(gptel--base64-encode media)))))
-            ((setq format (assoc mime gptel-bedrock--doc-formats))
-             `(:document (:format ,(cdr format)
-                          :name ,(file-name-nondirectory media)
-                          :source (:bytes ,(gptel--base64-encode media)))))
-            (t (error "Unsupported MIME type %s for AWS Bedrock" mime))))))))
-    (delq nil)
-    (vconcat)))
+               (cl-maplist
+                (lambda (tail)
+                  (let* ((part (car tail))
+                         (text (plist-get part :text))
+                         (mime (plist-get part :mime))
+                         (media (plist-get part :media))
+                         format)
+                    (cond
+                     (text (when (or (eq part (car parts)) (null (cdr tail)))
+                             (setq text (gptel--trim-prefixes text)))
+                           (unless (string-empty-p text)
+                             `(:text ,text)))
+                     (media
+                      (cond
+                       ((setq format (assoc mime gptel-bedrock--image-formats))
+                        `(:image (:format ,(cdr format) :source (:bytes ,(gptel--base64-encode media)))))
+                       ((setq format (assoc mime gptel-bedrock--doc-formats))
+                        `(:document (:format ,(cdr format)
+                                     :name ,(file-name-nondirectory media)
+                                     :source (:bytes ,(gptel--base64-encode media)))))
+                       (t (error "Unsupported MIME type %s for AWS Bedrock" mime))))))))
+               (delq nil)
+               (vconcat)))
 
 ;; gptel--inject-prompt not needed since the default implementation works here
 
@@ -477,7 +477,7 @@ conversation."
                       :content [(:text ,(plist-get tool-call :result))])))
      tool-use-requests))))
 
-(defun gptel-bedrock--get-credentials ()
+(defun gptel-bedrock--get-credentials-from-env ()
   "Return the AWS credentials to use for the request.
 
 Returns a list of 2-3 elements, depending on whether a session
@@ -491,12 +491,32 @@ Convenient to use with `cl-multiple-value-bind'"
     (cond
      ((and key-id secret-key token) (cl-values key-id secret-key token))
      ((and key-id secret-key) (cl-values key-id secret-key))
-     ;; TODO: Add support for more credential sources
-     (t (user-error "Missing AWS credentials; currently only environment variables are supported")))))
+     (t (user-error "Missing AWS credentials from the environment")))))
+
+(defcustom gptel-bedrock-credentials-function #'gptel-bedrock--get-credentials-from-env
+  "Function to get AWS credentials for Bedrock API requests.
+This function should return a list of 2-3 elements:
+(AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY [AWS_SESSION_TOKEN])
+where the session token is optional.
+
+By default, credentials are read from environment variables."
+  :group 'gptel
+  :type '(choice (function :tag "Credential function")
+          (const :tag "No credentials" nil)))
+
+(defun gptel-bedrock--get-credentials ()
+  "Return the AWS credentials to use for the request.
+
+Calls `gptel-bedrock-credentials-function' to retrieve credentials.
+Convenient to use with `cl-multiple-value-bind'."
+  (if gptel-bedrock-credentials-function
+      (funcall gptel-bedrock-credentials-function)
+    (user-error "No credential function configured for AWS Bedrock")))
 
 (defvar gptel-bedrock-model-ids
   ;; https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html
-  '((claude-3-5-sonnet-20241022  . "anthropic.claude-3-5-sonnet-20241022-v2:0")
+  '((claude-3-7-sonnet-20250219  . "us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    (claude-3-5-sonnet-20241022  . "anthropic.claude-3-5-sonnet-20241022-v2:0")
     (claude-3-5-sonnet-20240620  . "anthropic.claude-3-5-sonnet-20240620-v1:0")
     (claude-3-5-haiku-20241022   . "anthropic.claude-3-5-haiku-20241022-v1:0")
     (claude-3-opus-20240229      . "anthropic.claude-3-opus-20240229-v1:0")

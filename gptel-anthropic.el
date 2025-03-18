@@ -80,7 +80,7 @@ information if the stream contains it.  Not my best work, I know."
                     (plist-put          ;collect partial tool input
                      info :partial_json
                      (cons partial-json (plist-get info :partial_json)))))))
-           
+
            ((looking-at "content_block_start") ;Is the following block text or tool-use?
             (forward-line 1) (forward-char 5)
             (when-let* ((cblock (plist-get (gptel--json-read) :content_block)))
@@ -90,7 +90,7 @@ information if the stream contains it.  Not my best work, I know."
                                        (cons (list :id (plist-get cblock :id)
                                                    :name (plist-get cblock :name))
                                              (plist-get info :tool-use)))))))
-           
+
            ((and (looking-at "content_block_stop") (plist-get info :partial_json))
             (condition-case-unless-debug nil ;Combine partial tool inputs
                 (let* ((args-json (apply #'concat (nreverse (plist-get info :partial_json))))
@@ -103,7 +103,7 @@ information if the stream contains it.  Not my best work, I know."
               ;; TODO(tool) handle this error better
               (error (pop (plist-get info :tool-use)))) ;TODO: nreverse :tool-use list
             (plist-put info :partial_json nil))
-           
+
            ((looking-at "message_delta")
             ;; collect stop_reason, usage_tokens and prepare tools
             (forward-line 1) (forward-char 5)
@@ -117,11 +117,11 @@ information if the stream contains it.  Not my best work, I know."
                   `((:role "assistant"
                      :content ,(vconcat ;Insert any LLM text
                                 (and-let* ((strs (plist-get info :partial_text)))
-                                 (list (list :type "text" :text (apply #'concat (nreverse strs)))))
+                                  (list (list :type "text" :text (apply #'concat (nreverse strs)))))
                                 (mapcar (lambda (tool-call) ;followed by the tool calls
                                           (append (list :type "tool_use")
-                                           (copy-sequence tool-call)))
-                                 tool-use))))))
+                                                  (copy-sequence tool-call)))
+                                        tool-use))))))
                 (plist-put info :partial_text nil) ; Clear any captured text
                 ;; Then shape the tool-use block by adding args so we can call the functions
                 (mapc (lambda (tool-call)
@@ -232,7 +232,7 @@ TOOLS is a list of `gptel-tool' structs, which see."
                   (vconcat
                    (delq nil (mapcar
                               (lambda (arg) (and (not (plist-get arg :optional))
-                                            (plist-get arg :name)))
+                                                 (plist-get arg :name)))
                               (gptel-tool-args tool)))))))
     (ensure-list tools))))
 
@@ -289,7 +289,7 @@ TOOL-USE is a list of plists containing tool names, arguments and call results."
                            :content (buffer-substring-no-properties (point) prev-pt))
                      prompts))
               ('nil                     ; user role: possibly with media
-               (if include-media       
+               (if include-media
                    (push (list :role "user"
                                :content
                                (gptel--anthropic-parse-multipart
@@ -346,7 +346,7 @@ format."
               :data ,(gptel--base64-encode media))
      ;; TODO Make media caching a user option
      ,@(and (gptel--model-capable-p 'cache)
-        '(:cache_control (:type "ephemeral"))))
+            '(:cache_control (:type "ephemeral"))))
    into parts-array
    finally return (vconcat parts-array)))
 
@@ -387,7 +387,15 @@ files in the context."
 ;;         (plist-get (car (last prompts)) :content)))
 
 (defconst gptel--anthropic-models
-  '((claude-3-5-sonnet-20241022
+  '((claude-3-7-sonnet-20250219
+     :description "Hybrid model capable of standard thinking and extended thinking modes"
+     :capabilities (media tool-use cache)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
+     :context-window 200
+     :input-cost 3
+     :output-cost 15
+     :cutoff-date "2025-02")
+    (claude-3-5-sonnet-20241022
      :description "Highest level of intelligence and capability"
      :capabilities (media tool-use cache)
      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
@@ -463,10 +471,10 @@ comparison table:
     (name &key curl-args stream key request-params
           (header
            (lambda () (when-let* ((key (gptel--get-api-key)))
-                   `(("x-api-key" . ,key)
-                     ("anthropic-version" . "2023-06-01")
-                     ("anthropic-beta" . "pdfs-2024-09-25")
-                     ("anthropic-beta" . "prompt-caching-2024-07-31")))))
+                        `(("x-api-key" . ,key)
+                          ("anthropic-version" . "2023-06-01")
+                          ("anthropic-beta" . "pdfs-2024-09-25")
+                          ("anthropic-beta" . "prompt-caching-2024-07-31")))))
           (models gptel--anthropic-models)
           (host "api.anthropic.com")
           (protocol "https")
@@ -537,7 +545,7 @@ for."
     (prog1 backend
       (setf (alist-get name gptel--known-backends
                        nil nil #'equal)
-                  backend))))
+            backend))))
 
 (provide 'gptel-anthropic)
 ;;; gptel-anthropic.el ends here
