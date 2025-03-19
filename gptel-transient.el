@@ -395,7 +395,7 @@ which see."
   (let ((display-value
          (with-slots (value display-nil display-map) obj
            (cond ((null value) display-nil)
-                 (display-map (cdr (assoc value display-map)))
+                 (display-map (or (cdr (assoc value display-map)) value))
                  (t value)))))
     (propertize
      (if (stringp display-value) display-value (prin1-to-string display-value))
@@ -497,28 +497,28 @@ This is used only for setting this variable via `gptel-menu'.")
            (oset obj value value)))
 
 (defclass gptel-provider-variable (transient-lisp-variable)
-  ((model       :initarg :model)
-   (model-value :initarg :model-value)
+  ((backend       :initarg :backend)
+   (backend-value :initarg :backend-value)
    (always-read :initform t)
    (set-value :initarg :set-value :initform #'set))
   "Class used for gptel-backends.")
 
 (cl-defmethod transient-format-value ((obj gptel-provider-variable))
   (propertize (concat
-               (gptel-backend-name (oref obj value)) ":"
-               (gptel--model-name
-                (buffer-local-value (oref obj model) transient--original-buffer)))
+               (gptel-backend-name
+                (buffer-local-value (oref obj backend) transient--original-buffer)) ":"
+               (gptel--model-name (oref obj value)))
               'face 'transient-value))
 
 (cl-defmethod transient-infix-set ((obj gptel-provider-variable) value)
   (pcase-let ((`(,backend-value ,model-value) value))
     (funcall (oref obj set-value)
              (oref obj variable)
-             (oset obj value backend-value)
+             (oset obj value model-value)
              gptel--set-buffer-locally)
     (funcall (oref obj set-value)
-             (oref obj model)
-             (oset obj model-value model-value)
+             (oref obj backend)
+             (oset obj backend-value backend-value)
              gptel--set-buffer-locally))
   (transient-setup))
 
@@ -556,8 +556,6 @@ Also format its value in the Transient menu."
 
 
 ;; * Transient Prefixes
-
-(define-obsolete-function-alias 'gptel-send-menu 'gptel-menu "0.3.2")
 
 ;;;###autoload (autoload 'gptel-menu "gptel-transient" nil t)
 (transient-define-prefix gptel-menu ()
@@ -603,6 +601,7 @@ Also format its value in the Transient menu."
                     (or gptel-mode gptel-track-response))))
     (gptel--infix-temperature :if (lambda () gptel-expert-commands))
     (gptel--infix-use-context)
+    (gptel--infix-include-reasoning)
     (gptel--infix-use-tools)
     (gptel--infix-track-response
      :if (lambda () (and gptel-expert-commands (not gptel-mode))))
@@ -909,12 +908,12 @@ responses."
 
 (transient-define-infix gptel--infix-provider ()
   "AI Provider for Chat."
-  :description "GPT Model"
+  :description "Model"
   :class 'gptel-provider-variable
   :prompt "Model: "
-  :variable 'gptel-backend
+  :variable 'gptel-model
   :set-value #'gptel--set-with-scope
-  :model 'gptel-model
+  :backend 'gptel-backend
   :key "-m"
   :reader (lambda (prompt &rest _)
             (cl-loop
@@ -949,7 +948,9 @@ responses."
 		       " " (propertize " " 'display `(space :align-to 166))
 		       cutoff)))))
              finally return
-             (cdr (assoc (completing-read prompt models-alist nil t)
+             (cdr (assoc (completing-read prompt models-alist nil t nil nil
+					  (concat (gptel-backend-name gptel-backend) ":"
+						  (gptel--model-name gptel-model)))
                          models-alist)))))
 
 (transient-define-infix gptel--infix-temperature ()
@@ -981,7 +982,7 @@ querying the LLM."
   :set-value #'gptel--set-with-scope
   :display-if-true "Yes"
   :display-if-false "No"
-  :key "-v")
+  :key "-R")
 
 (transient-define-infix gptel--infix-track-media ()
   "Send media from \"standalone\" links in the prompt.
@@ -1095,6 +1096,46 @@ Or in an extended conversation:
   :argument ":"
   :description "Add instruction"
   :transient t)
+
+;; ** Infix for reasoning block control
+
+(transient-define-infix gptel--infix-include-reasoning ()
+  "How to handle reasoning/thinking response blocks.
+
+Some LLMs include in their response a \"thinking\" section.  This
+text improves the quality of the LLM's final output, but may not
+be interesting to you by itself.
+
+You can control how gptel should handle the thinking blocks via
+this option, or by setting the variable `gptel-include-reasoning'
+via elisp, which see.
+
+Available behaviors are
+- to include thinking blocks with the response,
+- to omit them entirely,
+- to include them but ignore them in consequent conversation turns, and
+- to append them to a buffer of your choosing."
+  :description "Include reasoning"
+  :class 'gptel-lisp-variable
+  :variable 'gptel-include-reasoning
+  :format " %k %d %v"
+  :set-value #'gptel--set-with-scope
+  :display-nil "No"
+  :display-map '((nil    . "No")
+                 (ignore . "and ignore")
+                 (t      . "with response"))
+  :key "-v"
+  :prompt "Include reasoning: "
+  :reader (lambda (prompt &rest _)
+            (let* ((choices '(("no"     . nil)
+                              ("ignore" . ignore)
+                              ("yes"    . t)
+                              ("other buffer" . buffer)))
+                   (destination
+                    (completing-read prompt choices nil t)))
+              (if (equal destination "other buffer")
+                  (read-buffer "Append reasoning to buffer: ")
+                (cdr (assoc destination choices))))))
 
 ;; ** Infixes for tool use
 
@@ -1227,25 +1268,27 @@ This sets the variable `gptel-include-tool-results', which see."
      ((member "e" args)
       (setq stream nil)
       (setq callback
-            (lambda (resp info)
-              (cond
-               ((stringp resp) (message "%s response: %s" backend-name resp))
-               ((consp resp) (gptel--display-tool-calls resp info 'minibuffer))
-               ((and (null resp) (plist-get info :error))
-                (message "%s response error: %s"
-                         backend-name (plist-get info :status)))))))
+            (lambda (resp info &optional _raw)
+              (pcase resp
+                ((pred stringp) (message "%s response: %s" backend-name resp))
+                (`(tool-call . ,tool-calls) (gptel--display-tool-calls tool-calls info 'minibuffer))
+                (`(tool-result . ,tool-results) (gptel--display-tool-results tool-results info))
+                (_ (when (and (null resp) (plist-get info :error))
+                     (message "%s response error: %s"
+                              backend-name (plist-get info :status))))))))
      ((member "k" args)
       (setq stream nil)
       (setq callback
-            (lambda (resp info)
-              (cond
-               ((stringp resp) (kill-new resp)
-                (message "%s response: \"%s\" copied to kill-ring." backend-name
-                         (truncate-string-to-width resp 30)))
-               ((consp resp) (gptel--display-tool-calls resp info 'minibuffer))
-               ((and (null resp) (plist-get info :error))
-                (message "%s response error: %s" backend-name
-                         (plist-get info :status)))))))
+            (lambda (resp info &optional _raw)
+              (pcase resp
+                ((pred stringp) (kill-new resp)
+                 (message "%s response: \"%s\" copied to kill-ring." backend-name
+                          (truncate-string-to-width resp 30)))
+                (`(tool-call . ,tool-calls) (gptel--display-tool-calls tool-calls info 'minibuffer))
+                (`(tool-result . ,tool-results) (gptel--display-tool-results tool-results info))
+                (_ (when (and (null resp) (plist-get info :error))
+                     (message "%s response error: %s" backend-name
+                              (plist-get info :status))))))))
      ((setq gptel-buffer-name
             (cl-some (lambda (s) (and (stringp s) (string-prefix-p "g" s)
                                  (substring s 1)))
@@ -1379,7 +1422,7 @@ for details."
   "Regenerate gptel response at point."
   (interactive)
   (when (gptel--in-response-p)
-    (pcase-let* ((`(,beg . ,end) (gptel--get-bounds))
+    (pcase-let* ((`(,beg . ,end) (gptel--get-response-bounds))
                  (history (get-char-property (point) 'gptel-history))
                  (prev-responses (cons (buffer-substring-no-properties beg end)
                                        history)))

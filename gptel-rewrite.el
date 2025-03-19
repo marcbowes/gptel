@@ -30,6 +30,7 @@
 (defvar diff-entire-buffers)
 
 (declare-function diff-no-select "diff")
+(declare-function rmc--add-key-description "rmc")
 
 ;; * User options
 
@@ -413,6 +414,7 @@ INFO is the async communication channel for the rewrite request."
       (message (concat "LLM response error: %s. Rewrite in buffer %s canceled.")
                (plist-get info :status) (plist-get info :buffer))
       (gptel--rewrite-callback 'abort info))
+     ((consp response)) ;reasoning or tool calls -- don't care and not implemented, respectively
      (t (let ((proc-buf (cdr-safe (plist-get info :context))) ;finished successfully
               (mkb (propertize "<mouse-1>" 'face 'help-key-binding)))
           (with-current-buffer proc-buf
@@ -636,6 +638,9 @@ generated from functions."
       (unless (get-char-property (point) 'gptel-rewrite)
         (when (= (point) (region-end)) (backward-char 1)))
       (deactivate-mark))))
+
+;; Allow this to be called non-interactively for dry runs
+(put 'gptel--suffix-rewrite 'interactive-only nil)
 
 (transient-define-suffix gptel--suffix-rewrite-diff (&optional switches)
   "Diff LLM output against buffer."

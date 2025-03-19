@@ -71,7 +71,7 @@ information if the stream contains it.  Not my best work, I know."
               (error "Data block incomplete"))
           (cond
            ((looking-at "content_block_delta") ;collect incremental
-            (forward-line 1) (forward-char 5)  ;text or tool responses
+            (forward-line 1) (forward-char 5)  ;text, tool or thinking block
             (when-let* ((delta (plist-get (gptel--json-read) :delta)))
               (if-let* ((content (plist-get delta :text))
                         ((not (eq content :null))))
@@ -79,8 +79,11 @@ information if the stream contains it.  Not my best work, I know."
                 (if-let* ((partial-json (plist-get delta :partial_json)))
                     (plist-put          ;collect partial tool input
                      info :partial_json
-                     (cons partial-json (plist-get info :partial_json)))))))
-
+                     (cons partial-json (plist-get info :partial_json)))
+                  (if-let* ((thinking (plist-get delta :thinking)))
+                      (plist-put info :reasoning
+                                 (concat (plist-get info :reasoning) thinking)))))))
+           
            ((looking-at "content_block_start") ;Is the following block text or tool-use?
             (forward-line 1) (forward-char 5)
             (when-let* ((cblock (plist-get (gptel--json-read) :content_block)))
@@ -89,21 +92,28 @@ information if the stream contains it.  Not my best work, I know."
                 ("tool_use" (plist-put info :tool-use
                                        (cons (list :id (plist-get cblock :id)
                                                    :name (plist-get cblock :name))
-                                             (plist-get info :tool-use)))))))
+                                             (plist-get info :tool-use))))
+                ("thinking" (plist-put info :reasoning (plist-get cblock :thinking))
+                 (plist-put info :reasoning-block 'in)))))
+           
+           ((looking-at "content_block_stop")
+            (cond
+             ((plist-get info :partial_json)   ;End of tool block
+              (condition-case-unless-debug nil ;Combine partial tool inputs
+                  (let* ((args-json (apply #'concat (nreverse (plist-get info :partial_json))))
+                         (args-decoded  ;Handle blank argument strings
+                          (if (string-empty-p args-json)
+                              nil (gptel--json-read-string args-json))))
+                    ;; Add the input to the tool-call spec
+                    (plist-put (car (plist-get info :tool-use)) :input args-decoded))
+                ;; If there was an error in reading that tool, we ignore it:
+                ;; TODO(tool) handle this error better
+                (error (pop (plist-get info :tool-use)))) ;TODO: nreverse :tool-use list
+              (plist-put info :partial_json nil))
 
-           ((and (looking-at "content_block_stop") (plist-get info :partial_json))
-            (condition-case-unless-debug nil ;Combine partial tool inputs
-                (let* ((args-json (apply #'concat (nreverse (plist-get info :partial_json))))
-                       (args-decoded    ;Handle blank argument strings
-                        (if (string-empty-p args-json)
-                            nil (gptel--json-read-string args-json))))
-                  ;; Add the input to the tool-call spec
-                  (plist-put (car (plist-get info :tool-use)) :input args-decoded))
-              ;; If there was an error in reading that tool, we ignore it:
-              ;; TODO(tool) handle this error better
-              (error (pop (plist-get info :tool-use)))) ;TODO: nreverse :tool-use list
-            (plist-put info :partial_json nil))
-
+             ((eq (plist-get info :reasoning-block) 'in) ;End of reasoning block
+              (plist-put info :reasoning-block t)))) ;Signal end of reasoning stream to filter
+           
            ((looking-at "message_delta")
             ;; collect stop_reason, usage_tokens and prepare tools
             (forward-line 1) (forward-char 5)
@@ -126,7 +136,9 @@ information if the stream contains it.  Not my best work, I know."
                 ;; Then shape the tool-use block by adding args so we can call the functions
                 (mapc (lambda (tool-call)
                         (plist-put tool-call :args (plist-get tool-call :input))
-                        (plist-put tool-call :input nil))
+                        (plist-put tool-call :input nil)
+                        (plist-put tool-call :id (gptel--anthropic-unformat-tool-id
+                                                  (plist-get tool-call :id))))
                       tool-use)))
             (when-let* ((response (gptel--json-read)))
               (plist-put info :output-tokens
@@ -156,6 +168,12 @@ Mutate state INFO with response metadata."
    collect (plist-get cblock :text) into content-strs
    else if (equal type "tool_use")
    collect cblock into tool-use
+   else if (equal type "thinking")
+   do
+   (plist-put
+    info :reasoning
+    (concat (plist-get info :reasoning)
+            (plist-get cblock :thinking)))
    finally do
    (when tool-use
      ;; First, add the tool call to the prompts list
@@ -170,6 +188,8 @@ Mutate state INFO with response metadata."
       for call = (copy-sequence call-raw) do
       (plist-put call :args (plist-get call :input))
       (plist-put call :input nil)
+      (plist-put call :id (gptel--anthropic-unformat-tool-id
+                           (plist-get call :id)))
       collect call into calls
       finally do (plist-put info :tool-use calls)))
    finally return
@@ -183,15 +203,25 @@ Mutate state INFO with response metadata."
            :max_tokens ,(or gptel-max-tokens 1024)
            :messages [,@prompts])))
     (when gptel--system-message
-      (plist-put prompts-plist :system gptel--system-message))
+      (if (and (or (eq gptel-cache t) (memq 'system gptel-cache))
+               (gptel--model-capable-p 'cache))
+          ;; gptel--system-message is guaranteed to be a string
+          (plist-put prompts-plist :system
+                     `[(:type "text" :text ,gptel--system-message
+                        :cache_control (:type "ephemeral"))])
+        (plist-put prompts-plist :system gptel--system-message)))
     (when gptel-temperature
       (plist-put prompts-plist :temperature gptel-temperature))
     (when gptel-use-tools
       (when (eq gptel-use-tools 'force)
         (plist-put prompts-plist :tool_choice '(:type "any")))
       (when gptel-tools
-        (plist-put prompts-plist :tools
-                   (gptel--parse-tools backend gptel-tools))))
+        (let ((tools-array (gptel--parse-tools backend gptel-tools)))
+          (plist-put prompts-plist :tools tools-array)
+          (when (and (or (eq gptel-cache t) (memq 'tool gptel-cache))
+                     (gptel--model-capable-p 'cache))
+            (nconc (aref tools-array (1- (length tools-array)))
+                   '(:cache_control (:type "ephemeral")))))))
     ;; Merge request params with model and backend params.
     (gptel--merge-plists
      prompts-plist
@@ -250,7 +280,8 @@ TOOL-USE is a list of plists containing tool names, arguments and call results."
        (let* ((result (plist-get tool-call :result))
               (formatted
                (list :type "tool_result"
-                     :tool_use_id (plist-get tool-call :id)
+                     :tool_use_id (gptel--anthropic-format-tool-id
+                                   (plist-get tool-call :id))
                      :content (if (stringp result) result
                                 (prin1-to-string result)))))
          (prog1 formatted
@@ -261,14 +292,34 @@ TOOL-USE is a list of plists containing tool names, arguments and call results."
 ;; NOTE: No `gptel--inject-prompt' method required for gptel-anthropic, since
 ;; this is handled by its defgeneric implementation
 
+(defun gptel--anthropic-format-tool-id (tool-id)
+  (if (string-prefix-p "toolu_" tool-id)
+      tool-id
+    (format "toolu_%s" tool-id)))
+
+(defun gptel--anthropic-unformat-tool-id (tool-id)
+  (or (and (string-match "toolu_\\(.+\\)" tool-id)
+           (match-string 1 tool-id))
+      (progn
+        (message "Unexpected tool_call_id format: %s" tool-id)
+        tool-id)))
+
 (cl-defmethod gptel--parse-list ((_backend gptel-anthropic) prompt-list)
   (cl-loop for text in prompt-list
            for role = t then (not role)
-           if text collect
-           (list :role (if role "user" "assistant")
-                 :content `[(:type "text" :text ,text)])))
+           if text
+           collect (list :role (if role "user" "assistant")
+                         :content `[(:type "text" :text ,text)])
+           into prompts
+           finally do
+           ;; cache messages if required: add cache_control to the last message
+           (if (and (or (eq gptel-cache t) (memq 'message gptel-cache))
+                    (gptel--model-capable-p 'cache))
+               (nconc (aref (plist-get (car (last prompts)) :content) 0)
+                      '(:cache_control (:type "ephemeral"))))
+           finally return prompts))
 
-(cl-defmethod gptel--parse-buffer ((_backend gptel-anthropic) &optional max-entries)
+(cl-defmethod gptel--parse-buffer ((backend gptel-anthropic) &optional max-entries)
   (let ((prompts) (prev-pt (point))
         (include-media (and gptel-track-media (or (gptel--model-capable-p 'media)
                                                   (gptel--model-capable-p 'url)))))
@@ -285,27 +336,58 @@ TOOL-USE is a list of plists containing tool names, arguments and call results."
           (unless (save-excursion (skip-syntax-forward " ") (>= (point) prev-pt))
             (pcase (get-char-property (point) 'gptel)
               ('response
-               (push (list :role "assistant"
-                           :content (buffer-substring-no-properties (point) prev-pt))
-                     prompts))
+               (when-let* ((content
+                            (gptel--trim-prefixes
+                             (buffer-substring-no-properties (point) prev-pt))))
+                 (when (not (string-blank-p content))
+                   (push (list :role "assistant" :content content) prompts))))
+              (`(tool . ,id)
+               (save-excursion
+                 (condition-case nil
+                     (let* ((tool-call (read (current-buffer)))
+                            (id (gptel--anthropic-format-tool-id id))
+                            (name (plist-get tool-call :name))
+                            (arguments (plist-get tool-call :args)))
+                       (plist-put tool-call :id id)
+                       (plist-put tool-call :result
+                                  (string-trim (buffer-substring-no-properties
+                                                (point) prev-pt)))
+                       (push (gptel--parse-tool-results backend (list tool-call))
+                             prompts)
+                       (push (list :role "assistant"
+                                   :content `[( :type "tool_use" :id ,id :name ,name
+                                                :input ,arguments)])
+                             prompts))
+                   ((end-of-file invalid-read-syntax)
+                    (message (format "Could not parse tool-call %s on line %s"
+                                     id (line-number-at-pos (point))))))))
+              ('ignore)
               ('nil                     ; user role: possibly with media
                (if include-media
-                   (push (list :role "user"
-                               :content
-                               (gptel--anthropic-parse-multipart
-                                (gptel--parse-media-links major-mode (point) prev-pt)))
-                         prompts)
-                 (push (list :role "user"
-                             :content
-                             (gptel--trim-prefixes
-                              (buffer-substring-no-properties (point) prev-pt)))
-                       prompts)))))
+                   (when-let* ((content (gptel--anthropic-parse-multipart
+                                         (gptel--parse-media-links major-mode (point) prev-pt))))
+                     (when (> (length content) 0)
+                       (push (list :role "user" :content content) prompts)))
+                 (when-let* ((content (gptel--trim-prefixes
+                                       (buffer-substring-no-properties (point) prev-pt))))
+                   (push (list :role "user" :content content) prompts))))))
           (setq prev-pt (point))
           (and max-entries (cl-decf max-entries)))
-      (push (list :role "user"
-                  :content
-                  (string-trim (buffer-substring-no-properties (point-min) (point-max))))
-            prompts))
+      (when-let* ((content (string-trim (buffer-substring-no-properties
+                                         (point-min) (point-max)))))
+        ;; XXX fails if content is empty.  The correct error behavior is left to
+        ;; a future discussion.
+        (push (list :role "user" :content content) prompts)))
+    ;; Cache messages if required: add cache_control to the last message
+    (if (and (or (eq gptel-cache t) (memq 'message gptel-cache))
+             (gptel--model-capable-p 'cache))
+        (let ((last-message (plist-get (car (last prompts)) :content)))
+          (if (stringp last-message)
+              (plist-put
+               (car (last prompts)) :content
+               `[(:type "text" :text ,last-message :cache_control (:type "ephemeral"))])
+            (nconc (aref (plist-get (car (last prompts)) :content) 0)
+                   '(:cache_control (:type "ephemeral"))))))
     prompts))
 
 (defun gptel--anthropic-parse-multipart (parts)
@@ -328,7 +410,7 @@ format."
    for media = (plist-get part :media)
    if text do
    (and (or (= n 1) (= n last)) (setq text (gptel--trim-prefixes text))) and
-   unless (string-empty-p text)
+   if text
    collect `(:type "text" :text ,text) into parts-array end
    else if media
    do
@@ -413,7 +495,7 @@ files in the context."
      :cutoff-date "2024-04")
     (claude-3-5-haiku-20241022
      :description "Intelligence at blazing speeds"
-     :capabilities (tool-use)
+     :capabilities (tool-use cache)
      :context-window 200
      :input-cost 1.00
      :output-cost 5.00
@@ -436,7 +518,7 @@ files in the context."
      :cutoff-date "2023-08")
     (claude-3-haiku-20240307
      :description "Fast and most compact model for near-instant responsiveness"
-     :capabilities (tool-use)
+     :capabilities (tool-use cache)
      :context-window 200
      :input-cost 0.25
      :output-cost 1.25
