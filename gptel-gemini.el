@@ -395,6 +395,24 @@ files in the context."
      :input-cost 0.00
      :output-cost 0.00
      :cutoff-date "2024-08")
+    (gemini-2.5-pro-exp-03-25
+     :description "Like gemini-2.5-pro-preview-03-25 but limited to 5 req/min, 25 req/day"
+     :capabilities (tool-use json media)
+     :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
+                  "application/pdf" "text/plain" "text/csv" "text/html")
+     :context-window 1000
+     :input-cost 0.00
+     :output-cost 0.00
+     :cutoff-date "2025-01")
+    (gemini-2.5-pro-preview-03-25
+     :description "Enhanced reasoning, multimodal understanding & advanced coding"
+     :capabilities (tool-use json media)
+     :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
+                  "application/pdf" "text/plain" "text/csv" "text/html")
+     :context-window 1000
+     :input-cost 1.25 ; 2.50 for >200k tokens
+     :output-cost 10.00 ; 15 for >200k tokens
+     :cutoff-date "2025-01")
     (gemini-2.0-flash-thinking-exp
      :description "DEPRECATED: Please use gemini-2.0-flash-thinking-exp-01-21 instead."
      :capabilities (tool-use media)
@@ -426,7 +444,8 @@ Information about the Gemini models was obtained from the following
 source:
 
 - <https://ai.google.dev/pricing>
-- <https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models>")
+- <https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models>
+- <https://ai.google.dev/gemini-api/docs/models>")
 
 ;;;###autoload
 (cl-defun gptel-make-gemini
@@ -501,10 +520,10 @@ for."
                   :request-params request-params
                   :key key
                   :url (lambda ()
-                         (let ((method (if (and stream
-                                                gptel-stream)
-                                           "streamGenerateContent"
-                                         "generateContent")))
+                         (let ((method
+                                (if (and stream gptel-use-curl gptel-stream)
+                                    "streamGenerateContent"
+                                  "generateContent")))
                            (format "%s://%s%s/%s:%s?key=%s"
                                    protocol
                                    host

@@ -1,4 +1,4 @@
-;;; gptel-curl.el --- Curl support for GPTel         -*- lexical-binding: t; -*-
+;;; gptel-curl.el --- Curl support for gptel         -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Karthik Chikmagalur
 
@@ -22,7 +22,7 @@
 
 ;;; Commentary:
 
-;; Curl support for GPTel.  Utility functions.
+;; Curl support for gptel.  Utility functions.
 
 ;;; Code:
 
@@ -136,7 +136,11 @@ the response is inserted into the current buffer after point."
          (args (gptel-curl--get-args info token))
          (stream (plist-get info :stream))
          (process (apply #'start-process "gptel-curl"
-                         (generate-new-buffer "*gptel-curl*") gptel-curl-path args)))
+                         (gptel--temp-buffer " *gptel-curl*") gptel-curl-path args)))
+    ;; Don't try to convert cr-lf to cr on Windows so that curl's "header size
+    ;; in bytes" stays correct. Explicitly set utf-8 for non-win systems too,
+    ;; for cases when buffer coding system is not set to utf-8.
+    (set-process-coding-system process 'utf-8-unix 'utf-8-unix)
     (when (eq gptel-log-level 'debug)
       (gptel--log (mapconcat #'shell-quote-argument (cons gptel-curl-path args) " \\\n")
                   "request Curl command" 'no-json))
@@ -214,7 +218,7 @@ PROC-INFO is the plist containing process metadata."
 
 ;; TODO: Separate user-messaging from this function
 (defun gptel-curl--stream-cleanup (process _status)
-  "Process sentinel for GPTel curl requests.
+  "Process sentinel for gptel curl requests.
 
 PROCESS and _STATUS are process parameters."
   (let ((proc-buf (process-buffer process)))

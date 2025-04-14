@@ -143,7 +143,6 @@ heading 2.2 text
 -----
 
 This makes it feasible to have multiple conversation branches."
-  :local t
   :type 'boolean
   :group 'gptel)
 
@@ -226,12 +225,15 @@ value of `gptel-org-branching-context', which see."
                                   (org-element-at-point) #'gptel-org--element-begin
                                 '(headline) 'with-self) )
                  ;; lineage-map returns the full lineage in the unnarrowed
-                 ;; buffer.  Remove heading start positions at or before
-                 ;; (point-min) that are invalid due to narrowing, and add
-                 ;; (point-min) explicitly
-                 (start-bounds (nconc (cl-delete-if (lambda (p) (<= p (point-min)))
-                                                    full-bounds)
-                                      (list (point-min))))
+                 ;; buffer.  Remove heading start positions before (point-min)
+                 ;; that are invalid due to narrowing, and add (point-min) if
+                 ;; it's not already included in the lineage
+                 (start-bounds
+                  (nconc (cl-delete-if (lambda (p) (< p (point-min)))
+                                       full-bounds)
+                         (unless (save-excursion (goto-char (point-min))
+                                                 (looking-at-p outline-regexp))
+                           (list (point-min)))))
                  (end-bounds
                   (cl-loop
                    ;; (car start-bounds) is the begining of the current element,
@@ -254,8 +256,8 @@ value of `gptel-org-branching-context', which see."
               (gptel--parse-buffer gptel-backend max-entries))))
       ;; Create prompt the usual way
       (let ((org-buf (current-buffer))
-            (beg (point-min)) (end (point-max)))
-        (gptel--with-buffer-copy org-buf beg end
+            (beg (point-min)))
+        (gptel--with-buffer-copy org-buf beg prompt-end
           (gptel-org--unescape-tool-results)
           (gptel-org--strip-elements)
           (gptel-org--strip-block-headers)
@@ -617,7 +619,8 @@ START-MARKER is used to identify the corresponding process when
 cleaning up after."
   (letrec ((in-src-block nil)           ;explicit nil to address BUG #183
            (in-org-src-block nil)
-           (temp-buf (generate-new-buffer " *gptel-temp*" t))
+           (temp-buf ; NOTE: Switch to `generate-new-buffer' after we drop Emacs 27.1
+            (gptel--temp-buffer " *gptel-temp*"))
            (start-pt (make-marker))
            (ticks-total 0)      ;MAYBE should we let-bind case-fold-search here?
            (cleanup-fn
