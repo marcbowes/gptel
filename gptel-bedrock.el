@@ -76,8 +76,43 @@ TOOLS is a list of `gptel-tool' structs, which see."
             (list
              :name (gptel-tool-name tool)
              :description (gptel-tool-description tool)
-             :inputSchema (list :json (gptel--tool-args-to-json-schema (gptel-tool-args tool))))))
+             :inputSchema (list :json (gptel-bedrock--tool-args-to-json-schema (gptel-tool-args tool))))))
     (ensure-list tools))))
+
+(defun gptel-bedrock--tool-args-to-json-schema (tool-args)
+  "Convert TOOL-ARGS into a JSON schema object."
+  (list :type "object"
+        :properties
+        (cl-loop
+         for arg in tool-args
+         for name = (plist-get arg :name)
+         for type = (plist-get arg :type)
+         for newname = (or (and (keywordp name) name)
+                           (make-symbol (concat ":" name)))
+         for enum = (plist-get arg :enum)
+         append
+         (list newname
+               `(:type ,type
+                       :description ,(plist-get arg :description)
+                       ,@(if enum (list :enum (vconcat enum)))
+                       ,@(cond
+                          ((equal type "object")
+                           (list :properties (plist-get arg :properties)
+                                 :required (or (plist-get arg :required)
+                                               (vector))
+                                 :additionalProperties :json-false))
+                          ((equal type "array")
+                           ;; TODO(tool) If the item type is an object,
+                           ;; add :additionalProperties to it
+                           (list :items (plist-get arg :items)))))))
+        :required
+        (vconcat
+         (delq nil (mapcar
+                    (lambda (arg) (and (not (plist-get arg :optional))
+                                       (plist-get arg :name)))
+                    tool-args)))
+        :additionalProperties :json-false))
+
 
 (cl-defmethod gptel--parse-response ((_backend gptel-bedrock) response info)
   "Parse a Bedrock (non-streaming) RESPONSE and return response text.

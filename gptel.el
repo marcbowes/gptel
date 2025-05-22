@@ -34,7 +34,7 @@
 ;;
 ;; gptel supports:
 ;;
-;; - The services ChatGPT, Azure, Gemini, Anthropic AI, Anyscale, Together.ai,
+;; - The services ChatGPT, Azure, Gemini, Anthropic AI, Together.ai,
 ;;   Perplexity, Anyscale, OpenRouter, Groq, PrivateGPT, DeepSeek, Cerebras,
 ;;   Github Models, Novita AI, xAI and Kagi (FastGPT & Summarizer).
 ;; - Local models via Ollama, Llama.cpp, Llamafiles or GPT4All
@@ -50,6 +50,7 @@
 ;; - LLM responses are in Markdown or Org markup.
 ;; - Supports conversations and multiple independent sessions.
 ;; - Supports tool-use to equip LLMs with agentic capabilities.
+;; - Supports Model Context Protocol (MCP) integration using the mcp.el package.
 ;; - Supports multi-modal models (send images, documents).
 ;; - Supports "reasoning" content in LLM responses.
 ;; - Save chats as regular Markdown/Org/Text files and resume them later.
@@ -136,6 +137,21 @@
 ;; prefix arg), as well as examine or modify context.
 ;;
 ;; When context is available, gptel will include it with each LLM query.
+;;
+;; LLM Tool use:
+;;
+;; gptel supports "tool calling" behavior, where LLMs can specify arguments with
+;; which to call provided "tools" (elisp functions).  The results of running the
+;; tools are fed back to the LLM, giving it capabilities and knowledge beyond
+;; what is available out of the box.  For example, tools can perform web
+;; searches or API lookups, modify files and directories, and so on.
+;;
+;; Tools can be specified via `gptel-make-tool', or obtained from other
+;; repositories, or from Model Context Protocol (MCP) servers using the mcp.el
+;; package.  See the README for details.
+;;
+;; Tools can be included with LLM queries using gptel's menu, or from
+;; `gptel-tools'.
 ;;
 ;; Rewrite interface
 ;;
@@ -543,6 +559,37 @@ the same as t."
      :input-cost 0.15
      :output-cost 0.60
      :cutoff-date "2023-10")
+    (gpt-4.1
+     :description "Flagship model for complex tasks"
+     :capabilities (media tool-use json url)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+     :context-window 1024
+     :input-cost 2.0
+     :output-cost 8.0
+     :cutoff-date "2024-05")
+    (gpt-4.5-preview
+     :description "DEPRECATED: Use gpt-4.1 instead"
+     :capabilities (media tool-use url)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+     :context-window 128
+     :input-cost 75
+     :output-cost 150
+     :cutoff-date "2023-10")
+    (gpt-4.1-mini
+     :description "Balance between intelligence, speed and cost"
+     :capabilities (media tool-use json url)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+     :context-window 1024
+     :input-cost 0.4
+     :output-cost 1.6)
+    (gpt-4.1-nano
+     :description "Fastest, most cost-effective GPT-4.1 model"
+     :capabilities (media tool-use json url)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+     :context-window 1024
+     :input-cost 0.10
+     :output-cost 0.40
+     :cutoff-date "2024-05")
     (gpt-4-turbo
      :description "Previous high-intelligence model"
      :capabilities (media tool-use url)
@@ -550,40 +597,15 @@ the same as t."
      :context-window 128
      :input-cost 10
      :output-cost 30
-     :cutoff-date "2023-12")
-    ;; points to gpt-4-0613
+     :cutoff-date "2023-11")
     (gpt-4
      :description "GPT-4 snapshot from June 2023 with improved function calling support"
      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
-     :capabilities (media tool-use url)
+     :capabilities (media url)
      :context-window 8.192
      :input-cost 30
      :output-cost 60
-     :cutoff-date "2023-09")
-    (gpt-4-turbo-preview
-     :description "Points to gpt-4-0125-preview"
-     :capabilities (media tool-use url)
-     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
-     :context-window 128
-     :input-cost 10
-     :output-cost 30
-     :cutoff-date "2023-12")
-    (gpt-4-0125-preview
-     :description "GPT-4 Turbo preview model intended to reduce cases of “laziness”"
-     :capabilities (media tool-use url)
-     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
-     :context-window 128
-     :input-cost 10
-     :output-cost 30
-     :cutoff-date "2023-12")
-    (gpt-4.5-preview
-     :description "Largest and most capable GPT model to date"
-     :capabilities (media tool-use url)
-     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
-     :context-window 128
-     :input-cost 75
-     :output-cost 150
-     :cutoff-date "2023-10")
+     :cutoff-date "2023-11")
     (o1
      :description "Reasoning model designed to solve hard problems across domains"
      :capabilities (media reasoning)
@@ -591,46 +613,37 @@ the same as t."
      :context-window 200
      :input-cost 15
      :output-cost 60
-     :cutoff-date "2023-10"
-     :request-params (:stream :json-false))
-    (o1-preview
-     :description "DEPRECATED: PLEASE USE o1"
-     :capabilities (nosystem media)
-     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
-     :context-window 128
-     :input-cost 15
-     :output-cost 60
-     :cutoff-date "2023-10"
-     :capabilities (nosystem reasoning)
-     :request-params (:stream :json-false))
+     :cutoff-date "2023-10")
     (o1-mini
      :description "Faster and cheaper reasoning model good at coding, math, and science"
      :context-window 128
      :input-cost 3
      :output-cost 12
      :cutoff-date "2023-10"
-     :capabilities (nosystem reasoning)
-     :request-params (:stream :json-false))
+     :capabilities (nosystem reasoning))
+    (o3
+     :description "Well-rounded and powerful model across domains"
+     :capabilities (reasoning media tool-use json url)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+     :context-window 200
+     :input-cost 10
+     :output-cost 40
+     :cutoff-date "2024-05")
     (o3-mini
      :description "High intelligence at the same cost and latency targets of o1-mini"
      :context-window 200
-     :input-cost 3
-     :output-cost 12
+     :input-cost 1.10
+     :output-cost 4.40
      :cutoff-date "2023-10"
-     :capabilities (reasoning)
-     :request-params (:stream :json-false))
-    ;; limited information available
-    (gpt-4-32k
-     :capabilities (tool-use)
-     :input-cost 60
-     :output-cost 120)
-    (gpt-4-1106-preview
-     :description "Preview model with improved function calling support"
-     :capabilities (tool-use)
-     :context-window 128
-     :input-cost 10
-     :output-cost 30
-     :cutoff-date "2023-04")
+     :capabilities (reasoning tool-use json))
+    (o4-mini
+     :description "Fast, effective reasoning with efficient performance in coding and visual tasks"
+     :capabilities (reasoning media tool-use json url)
+     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+     :context-window 200
+     :input-cost 1.10
+     :output-cost 4.40
+     :cutoff-date "2024-05")
     (gpt-3.5-turbo
      :description "More expensive & less capable than GPT-4o-mini; use that instead"
      :capabilities (tool-use)
@@ -918,6 +931,8 @@ Later plists in the sequence take precedence over earlier ones."
         (setq rtn (plist-put rtn p v))))
     rtn))
 
+(defvar url-http-end-of-headers)
+(defvar url-http-response-status)
 (cl-defun gptel--url-retrieve (url &key method data headers)
   "Retrieve URL synchronously with METHOD, DATA and HEADERS."
   (declare (indent 1))
@@ -960,15 +975,15 @@ Note: This will move the cursor."
     (dotimes (_ (abs arg))
       (funcall search 'gptel 'response t)
       (if (> arg 0)
-          (when (looking-at (concat "\n\\{1,2\\}"
-                                    (regexp-quote
-                                     (gptel-prompt-prefix-string))
-                                    "?"))
+          (when-let* ((prefix (gptel-prompt-prefix-string))
+                      ((not (string-empty-p prefix)))
+                      ((looking-at (concat "\n\\{1,2\\}"
+                                           (regexp-quote prefix) "?"))))
             (goto-char (match-end 0)))
-        (when (looking-back (concat (regexp-quote
-                                     (gptel-response-prefix-string))
-                                    "?")
-                            (point-min))
+        (when-let* ((prefix (gptel-response-prefix-string))
+                    ((not (string-empty-p prefix)))
+                    ((looking-back (concat (regexp-quote prefix) "?")
+                                   (point-min))))
           (goto-char (match-beginning 0)))))))
 
 (defmacro gptel--at-word-end (&rest body)
@@ -1001,12 +1016,14 @@ Compatibility macro for Emacs 27.1."
       `(generate-new-buffer ,buf)
     `(generate-new-buffer ,buf t)))
 
-(defun gptel-prompt-prefix-string ()
+(defsubst gptel-prompt-prefix-string ()
   "Prefix before user prompts in `gptel-mode'."
+  (declare (side-effect-free t))
   (or (alist-get major-mode gptel-prompt-prefix-alist) ""))
 
-(defun gptel-response-prefix-string ()
+(defsubst gptel-response-prefix-string ()
   "Prefix before LLM responses in `gptel-mode'."
+  (declare (side-effect-free t))
   (or (alist-get major-mode gptel-response-prefix-alist) ""))
 
 (defsubst gptel--trim-prefixes (s)
@@ -1533,7 +1550,11 @@ a tool, use `gptel-make-tool', which see."
   :group 'gptel
   :type '(repeat gptel-tool))
 
-(cl-defstruct (gptel-tool (:constructor gptel--make-tool)
+(cl-defstruct (gptel-tool (:constructor nil)
+                          (:constructor gptel--make-tool-internal
+                           (&key function name description args
+                                 async category confirm include
+                                 &allow-other-keys))
                           (:copier gptel--copy-tool))
   "Struct to specify tools for LLMs to run.
 
@@ -1542,29 +1563,44 @@ a (plain language) task.  If the LLM decides to use the tool to
 accomplish the task, gptel will run the tool and (optionally)
 feed the LLM the results.  You can add tools via
 `gptel-make-tool', which see."
-  function name description args async category confirm include)
-
-(define-advice gptel--make-tool (:filter-args (rest) preprocess-args)
-  "Convert symbol :type values to strings in the args in REST."
-  (cl-callf gptel--preprocess-tool-args (plist-get rest :args))
-  rest)
+  (function nil :type function :documentation "Function that runs the tool")
+  (name nil :type string :documentation "Tool name, snake_case recommended")
+  (description nil :type string :documentation "What the tool does, intended for the LLM")
+  (args nil :type list :documentation "List of plists specifying function arguments")
+  (async nil :type boolean :documentation "Whether the function runs asynchronously")
+  (category nil :type string :documentation "Use to group tools by purpose")
+  (confirm nil :type boolean :documentation "Seek confirmation before running tool?")
+  (include nil :type boolean :documentation "Include tool results in buffer?"))
 
 (defun gptel--preprocess-tool-args (spec)
   "Convert symbol :type values in tool SPEC to strings destructively."
-  (cond ((not (listp spec)) spec)
-        ((keywordp (car spec))
-         (let ((tail spec))
-           (while tail
-             (when (and (eq (car tail) :type) (symbolp (cadr tail)))
-               (setcar (cdr tail) (symbol-name (cadr tail))))
-             (when (listp (cadr tail))
-               (gptel--preprocess-tool-args (cadr tail)))
-             (setq tail (cddr tail)))
-           spec))
-        (t (dolist (element spec)
-             (when (listp element)
-               (gptel--preprocess-tool-args element)))
-           spec)))
+  ;; NOTE: Do not use `sequencep' here, as that covers strings too and breaks
+  ;; things.
+  (when (or (listp spec) (vectorp spec))
+    (cond
+     ((vectorp spec)
+      (cl-loop for element across spec
+               for idx upfrom 0
+               do (aset spec idx (gptel--preprocess-tool-args element))))
+     ((keywordp (car spec))
+      (let ((tail spec))
+        (while tail
+          (when (and (eq (car tail) :type) (symbolp (cadr tail)))
+            (setcar (cdr tail) (symbol-name (cadr tail))))
+          ;; TODO: Handle :enum ("provided" "as" "list") here, convert to
+          ;; :enum ["provided" "as" "array"]
+          (when (or (listp (cadr tail)) (vectorp (cadr tail)))
+            (gptel--preprocess-tool-args (cadr tail)))
+          (setq tail (cddr tail)))))
+     ((listp spec) (dolist (element spec)
+                     (when (listp element)
+                       (gptel--preprocess-tool-args element))))))
+  spec)
+
+(defun gptel--make-tool (&rest spec)
+  "Construct a gptel-tool according to SPEC."
+  (gptel--preprocess-tool-args (plist-get spec :args))
+  (apply #'gptel--make-tool-internal spec))
 
 (defvar gptel--known-tools nil
   "Alist of gptel tools arranged by category.
@@ -1610,7 +1646,7 @@ returned."
                   (cl-loop for (_ . tools) in gptel--known-tools
                            if (assoc path tools)
                            return (cdr it)))))
-      (user-error "No tool matches for %S" path)))
+      (error "No tool matches for %S" path)))
 
 (defun gptel-make-tool (&rest slots)
   "Make a gptel tool for LLM use.
@@ -1712,43 +1748,40 @@ implementation, used by OpenAI-compatible APIs and Ollama."
         (list
          :name (gptel-tool-name tool)
          :description (gptel-tool-description tool))
-        (and (gptel-tool-args tool)     ;no parameters if args is nil
-             `(:parameters ,(gptel--tool-args-to-json-schema (gptel-tool-args tool)))))))
+        (if (gptel-tool-args tool)
+             (list
+              :parameters
+              (list :type "object"
+                    ;; gptel's tool args spec is close to the JSON schema, except
+                    ;; that we use (:name "argname" ...)
+                    ;; instead of  (:argname (...)), and
+                    ;; (:optional t) for each arg instead of (:required [...])
+                    ;; for all args at once.  Handle this difference by
+                    ;; modifying a copy of the gptel tool arg spec.
+                    :properties
+                    (cl-loop
+                     for arg in (gptel-tool-args tool)
+                     for argspec = (copy-sequence arg)
+                     for name = (plist-get arg :name) ;handled differently
+                     for newname = (or (and (keywordp name) name)
+                                       (make-symbol (concat ":" name)))
+                     do                ;ARGSPEC is ARG without unrecognized keys
+                     (cl-remf argspec :name)
+                     (cl-remf argspec :optional)
+                     if (equal (plist-get arg :type) "object")
+                     do (unless (plist-member argspec :required)
+                          (plist-put argspec :required []))
+                     (plist-put argspec :additionalProperties :json-false)
+                     append (list newname argspec))
+                    :required
+                    (vconcat
+                     (delq nil (mapcar
+                                (lambda (arg) (and (not (plist-get arg :optional))
+                                              (plist-get arg :name)))
+                                (gptel-tool-args tool))))
+                    :additionalProperties :json-false))
+          (list :parameters :null)))))
     (ensure-list tools))))
-
-(defun gptel--tool-args-to-json-schema (tool-args)
-  "Convert TOOL-ARGS into a JSON schema object."
-  (list :type "object"
-        :properties
-        (cl-loop
-         for arg in tool-args
-         for name = (plist-get arg :name)
-         for type = (plist-get arg :type)
-         for newname = (or (and (keywordp name) name)
-                           (make-symbol (concat ":" name)))
-         for enum = (plist-get arg :enum)
-         append
-         (list newname
-               `(:type ,type
-                       :description ,(plist-get arg :description)
-                       ,@(if enum (list :enum (vconcat enum)))
-                       ,@(cond
-                          ((equal type "object")
-                           (list :properties (plist-get arg :properties)
-                                 :required (or (plist-get arg :required)
-                                               (vector))
-                                 :additionalProperties :json-false))
-                          ((equal type "array")
-                           ;; TODO(tool) If the item type is an object,
-                           ;; add :additionalProperties to it
-                           (list :items (plist-get arg :items)))))))
-        :required
-        (vconcat
-         (delq nil (mapcar
-                    (lambda (arg) (and (not (plist-get arg :optional))
-                                       (plist-get arg :name)))
-                    tool-args)))
-        :additionalProperties :json-false))
 
 (cl-defgeneric gptel--parse-tool-results (backend results)
   "Return a BACKEND-appropriate prompt containing tool call RESULTS.
@@ -1971,7 +2004,8 @@ buffer."
   ;; a second network request: gptel tests for the presence of these flags to
   ;; handle state transitions.  (NOTE: Don't add :token to this.)
   (let ((info (gptel-fsm-info fsm)))
-    (dolist (key '(:tool-success :tool-use :error :http-status))
+    (dolist (key '(:tool-success :tool-use :error
+                   :http-status :reasoning :reasoning-block))
       (when (plist-get info key)
         (plist-put info key nil))))
   (funcall
@@ -2100,7 +2134,7 @@ Run post-response hooks."
          (lambda (tool-call)
            (letrec ((args (plist-get tool-call :args))
                     (name (plist-get tool-call :name))
-                    (arg-values)
+                    (arg-values nil)
                     (tool-spec
                      (cl-find-if
                       (lambda (ts) (equal (gptel-tool-name ts) name))
@@ -2162,6 +2196,7 @@ Run post-response hooks."
 (defun gptel--tool-result-p (info)
   (and (plist-get info :tools) (plist-get info :tool-success)))
 
+;; TODO(prompt-list): Document new prompt input format to `gptel-request'.
 
 ;;; Send queries, handle responses
 (cl-defun gptel-request
@@ -2230,20 +2265,6 @@ responses (see STREAM).  In these cases, RESPONSE can be
 See `gptel--insert-response' for an example callback handling all
 cases.
 
-STREAM is a boolean that determines if the response should be
-streamed, as in `gptel-stream'.  If the model or the backend does
-not support streaming, this will be ignored.
-
-When streaming responses
-
-- CALLBACK will be called repeatedly with each RESPONSE text
-  chunk (a string) as it is received.
-- When the HTTP request ends successfully, CALLBACK will be
-  called with a RESPONSE argument of t to indicate success.
-- Similarly, CALLBACK will be called with
-  (reasoning . text-chunk) for each reasoning chunk, and
-  (reasoning . t) to indicate the end of the reasoning block.
-
 The INFO plist has (at least) the following keys:
 :data         - The request data included with the query
 :position     - marker at the point the request was sent, unless
@@ -2274,6 +2295,20 @@ Or, for just the response:
 If CALLBACK is omitted, the response is inserted at the point the
 request was sent.
 
+STREAM is a boolean that determines if the response should be
+streamed, as in `gptel-stream'.  If the model or the backend does
+not support streaming, this will be ignored.
+
+When streaming responses
+
+- CALLBACK will be called repeatedly with each RESPONSE text
+  chunk (a string) as it is received.
+- When the HTTP request ends successfully, CALLBACK will be
+  called with a RESPONSE argument of t to indicate success.
+- Similarly, CALLBACK will be called with
+  (reasoning . text-chunk) for each reasoning chunk, and
+  (reasoning . t) to indicate the end of the reasoning block.
+
 BUFFER and POSITION are the buffer and position (integer or
 marker) at which the response is inserted.  If a CALLBACK is
 specified, no response is inserted and these arguments are
@@ -2301,8 +2336,9 @@ IN-PLACE is a boolean used by the default callback when inserting
 the response to determine if delimiters are needed between the
 prompt and the response.
 
-If DRY-RUN is non-nil, construct and return the full query data
-as usual, but do not send the request.
+If DRY-RUN is non-nil, do not send the request.  Construct and
+return a state machine object that can be introspected and
+resumed.
 
 FSM is the state machine driving the request.  This can be used
 to define a custom request control flow, see `gptel-fsm' for
@@ -2786,7 +2822,9 @@ the response is inserted into the current buffer after point."
     (let ((proc-buf
            (url-retrieve (let ((backend-url (gptel-backend-url gptel-backend)))
                            (if (functionp backend-url)
-                               (funcall backend-url) backend-url))
+                               (with-current-buffer (plist-get info :buffer)
+                                 (funcall backend-url))
+                             backend-url))
                          (lambda (_)
                            (set-buffer-multibyte t)
                            (set-buffer-file-coding-system 'utf-8-unix)
@@ -2830,11 +2868,9 @@ RESPONSE is the parsed JSON of the response, as a plist.
 PROC-INFO is a plist with process information and other context.
 See `gptel-curl--get-response' for its contents.")
 
-(defvar url-http-end-of-headers)
-(defvar url-http-response-status)
 (defun gptel--url-parse-response (backend proc-info)
   "Parse response from BACKEND with PROC-INFO."
-  (when gptel-log-level             ;logging
+  (when gptel-log-level                 ;logging
     (save-excursion
       (goto-char url-http-end-of-headers)
       (when (eq gptel-log-level 'debug)
@@ -2856,7 +2892,8 @@ See `gptel-curl--get-response' for its contents.")
        ;; FIXME Handle the case where HTTP 100 is followed by HTTP (not 200) BUG #194
        ((or (memq url-http-response-status '(200 100))
             (string-match-p "\\(?:1\\|2\\)00 OK" http-msg))
-        (list (and-let* ((resp (gptel--parse-response backend response proc-info)))
+        (list (and-let* ((resp (gptel--parse-response backend response proc-info))
+                         ((not (string-blank-p resp))))
                 (string-trim resp))
               http-status http-msg))
        ((plist-get response :error)
@@ -3244,6 +3281,201 @@ NAME and ARG-VALUES are the name and arguments for the call."
     (?y (call-interactively #'gptel--accept-tool-calls))
     (?k (call-interactively #'gptel--reject-tool-calls))
     (?i (gptel--inspect-fsm gptel--fsm-last))))
+
+
+;;; Presets
+;;;; Presets implementation
+(defvar gptel--known-presets nil
+  "Alist of presets for gptel.
+
+Each entry maps a preset name (a symbol) to a plist of
+specifications (see `gptel-make-preset').")
+
+(defun gptel-make-preset (name &rest keys)
+  "Define a gptel preset with NAME.
+
+A preset is a combination of gptel options intended to be applied and
+used together.  Presets can make it less tedious to change gptel
+settings on the fly.
+
+Typically this will include a model, backend, system message and perhaps
+some tools, but any set of gptel options can be set this way.
+
+NAME can be a symbol (preferred) or string.  KEYS is a plist
+corresponding to the options being set.  All KEYS are optional.
+Recognized keys include:
+
+DESCRIPTION is a description of the preset, used when selecting a
+preset.
+
+PARENTS is a preset name (or list of preset names) to apply before this
+one.
+
+BACKEND is the gptel-backend to set, or its name (like \"ChatGPT\").
+
+MODEL is the gptel-model.
+
+SYSTEM is the directive. It can be
+- the system message (a string),
+- a list of strings (a conversation template)
+- or a function (dynamic system message).
+- It can also be a symbol naming a directive in `gptel-directives'.
+
+TOOLS is a list of gptel tools or tool names, like
+\\='(\"read_url\" \"read_buffer\" ...)
+
+Recognized keys are not limited to the above.  Any other key (like
+`:foo') corresponds to the value of either `gptel-foo' (preferred) or
+`gptel--foo'.
+- So TOOLS corresponds to `gptel-tools',
+- CONFIRM-TOOL-CALLS to `gptel-confirm-tool-calls',
+- TEMPERATURE to `gptel-temperature' and so on.
+See gptel's customization options for all available settings."
+  (declare (indent 1))
+  (if-let* ((p (assoc name gptel--known-presets)))
+      (setcdr p keys)
+    (setq gptel--known-presets          ;Add at end of presets for menu ordering
+          (nconc gptel--known-presets (list (cons name keys))))))
+
+(defun gptel-get-preset (name)
+  "Get the gptel preset spec with NAME."
+  (alist-get name gptel--known-presets nil nil #'equal))
+
+(defun gptel--save-preset (name &optional description)
+  "Save gptel's current settings as a preset with NAME.
+
+NAME must be a symbol.  DESCRIPTION is added if provided.  In addition
+to registering the preset, elisp code to do the same is copied to the
+kill-ring."
+  (interactive
+   (list (intern (completing-read "Save gptel settings to (existing or new) preset: "
+                                  gptel--known-presets))
+         (read-string "Description (optional): ")))
+  (let ((preset-code
+         `(gptel-make-preset ',name
+           :description ,(when (and description
+                                (not (string-blank-p description)))
+                          description)
+           :backend ,(gptel-backend-name gptel-backend)
+           :model ',gptel-model
+           :system ,(if-let* ((directive (car-safe (rassoc gptel--system-message
+                                                    gptel-directives))))
+                         `',directive
+                      gptel--system-message)
+           :tools ',(mapcar #'gptel-tool-name gptel-tools)
+           :stream ,gptel-stream
+           :temperature ,gptel-temperature
+           :max-tokens ,gptel-max-tokens
+           :use-context ',gptel-use-context
+           :include-reasoning ,gptel-include-reasoning)))
+    (kill-new (pp-to-string preset-code))
+    (eval preset-code)
+    (message "Preset %s saved. (Lisp expression for preset saved to kill-ring)"
+             (propertize (symbol-name name) 'face 'highlight))))
+
+(defvar gptel--rewrite-directive)
+(defun gptel--apply-preset (preset &optional setter)
+  "Apply gptel PRESET with SETTER.
+
+PRESET is the name of a preset, or a spec of the form
+ (NAME :KEY1 VAL1 :KEY2 VAL2 ...).
+
+SETTER is the function used to set the gptel options.  It must accept
+two arguments, the symbol being set and the value to set it to.  It
+defaults to `set', and can be set to a different function to (for
+example) apply the preset buffer-locally."
+  (when (memq (type-of preset) '(string symbol))
+    (let ((spec (or (gptel-get-preset preset)
+                    (user-error "gptel preset \"%s\": Cannot find preset."
+                                preset))))
+      (setq preset (cons preset spec))))
+  (unless setter (setq setter #'set))
+  (when-let* ((parents (plist-get (cdr preset) :parents)))
+    (mapc #'gptel--apply-preset (ensure-list parents)))
+  (map-do
+   (lambda (key val)
+     (pcase key
+       ((or :parents :description) nil)
+       ((or :system :system-message :rewrite-directive)
+        (let ((sym (if (eq key :rewrite-directive)
+                       'gptel--rewrite-directive 'gptel--system-message)))
+          (if (and (symbolp val) (not (functionp val)))
+              (if-let* ((directive (alist-get val gptel-directives)))
+                  (funcall setter sym directive)
+                (user-error "gptel preset \"%s\": Cannot find directive %s"
+                            (car preset) val))
+            (funcall setter sym val))))
+       (:backend
+        (setq val (cl-etypecase val
+                    (gptel-backend val)
+                    (string (gptel-get-backend val))))
+        (unless val
+          (user-error "gptel preset \"%s\": Cannot find backend %s."
+                      (car preset) val))
+        (funcall setter 'gptel-backend val))
+       (:tools
+        (funcall
+         setter 'gptel-tools
+         (flatten-list
+          (cl-loop for tool-name in (ensure-list val)
+                   for tool = (cl-etypecase tool-name
+                                (gptel-tool tool-name)
+                                (string (gptel-get-tool tool-name)))
+                   do (unless tool
+                        (user-error "gptel preset \"%s\": Cannot find tool %s."
+                                    (car preset) val))
+                   collect tool))))
+       ((and (let sym (or (intern-soft
+                           (concat "gptel-" (substring (symbol-name key) 1)))
+                          (intern-soft
+                           (concat "gptel--" (substring (symbol-name key) 1)))))
+             (guard (and sym (boundp sym))))
+        (funcall setter sym val))
+       (_ (display-warning
+           '(gptel presets)
+           (format "gptel preset \"%s\": setting for %s not found, ignoring."
+                   (car preset) key)))))
+   (cdr preset)))
+
+(defun gptel--preset-syms (preset)
+  "Return a list of gptel variables (symbols) set by PRESET.
+
+PRESET is a spec (plist) of keys and values."
+  (let* ((index preset)
+         syms key val)
+    (while index
+      (setq key (pop index) val (pop index))
+      (pcase key
+        (:description)
+        (:parents
+         (mapc (lambda (parent-preset)
+                 (nconc syms (gptel--preset-syms
+                              (gptel-get-preset parent-preset))))
+               (ensure-list val)))
+        (:system (push 'gptel--system-message syms))
+        (_ (if-let* ((var (or (intern-soft
+                               (concat "gptel-" (substring (symbol-name key) 1)))
+                              (intern-soft
+                               (concat "gptel--" (substring (symbol-name key) 1))))))
+               (push var syms)
+             (display-warning
+              '(gptel presets)
+              (format "gptel preset \"%s\": setting for %s not found, ignoring."
+                      (car preset) key))))))
+    (cl-delete-duplicates syms)))
+
+(defmacro gptel-with-preset (name &rest body)
+  "Run BODY with gptel preset NAME applied.
+
+This macro can be used to create `gptel-request' command with settings
+from a gptel preset applied.  NAME is the preset name, typically a
+symbol."
+  (declare (indent 1))
+  `(cl-progv (gptel--preset-syms
+              (gptel-get-preset ,(if (symbolp name) `',name name)))
+       nil
+     (gptel--apply-preset ,(if (symbolp name) `',name name))
+     ,@body))
 
 
 ;;; Response tweaking commands
