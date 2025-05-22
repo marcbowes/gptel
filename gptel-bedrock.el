@@ -93,18 +93,18 @@ TOOLS is a list of `gptel-tool' structs, which see."
          append
          (list newname
                `(:type ,type
-                       :description ,(plist-get arg :description)
-                       ,@(if enum (list :enum (vconcat enum)))
-                       ,@(cond
-                          ((equal type "object")
-                           (list :properties (plist-get arg :properties)
-                                 :required (or (plist-get arg :required)
-                                               (vector))
-                                 :additionalProperties :json-false))
-                          ((equal type "array")
-                           ;; TODO(tool) If the item type is an object,
-                           ;; add :additionalProperties to it
-                           (list :items (plist-get arg :items)))))))
+                 :description ,(plist-get arg :description)
+                 ,@(if enum (list :enum (vconcat enum)))
+                 ,@(cond
+                    ((equal type "object")
+                     (list :properties (plist-get arg :properties)
+                           :required (or (plist-get arg :required)
+                                         (vector))
+                           :additionalProperties :json-false))
+                    ((equal type "array")
+                     ;; TODO(tool) If the item type is an object,
+                     ;; add :additionalProperties to it
+                     (list :items (plist-get arg :items)))))))
         :required
         (vconcat
          (delq nil (mapcar
@@ -550,7 +550,7 @@ Convenient to use with `cl-multiple-value-bind'."
 
 (defvar gptel-bedrock-model-ids
   ;; https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html
-  '((claude-opus-4-20250514-v1   . "us.anthropic.claude-opus-4-20250514-v1:0")
+  '((claude-opus-4-20250514      . "us.anthropic.claude-opus-4-20250514-v1:0")
     (claude-sonnet-4-20250514    . "us.anthropic.claude-sonnet-4-20250514-v1:0")
     (claude-3-7-sonnet-20250219  . "us.anthropic.claude-3-7-sonnet-20250219-v1:0")
     (claude-3-5-sonnet-20241022  . "anthropic.claude-3-5-sonnet-20241022-v2:0")
