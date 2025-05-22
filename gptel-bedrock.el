@@ -550,7 +550,8 @@ Convenient to use with `cl-multiple-value-bind'."
 
 (defvar gptel-bedrock-model-ids
   ;; https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html
-  '((claude-3-7-sonnet-20250219  . "us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+  '((claude-sonnet-4-20250514    . "anthropic.claude-sonnet-4-20250514-v1:0")
+    (claude-3-7-sonnet-20250219  . "us.anthropic.claude-3-7-sonnet-20250219-v1:0")
     (claude-3-5-sonnet-20241022  . "anthropic.claude-3-5-sonnet-20241022-v2:0")
     (claude-3-5-sonnet-20240620  . "anthropic.claude-3-5-sonnet-20240620-v1:0")
     (claude-3-5-haiku-20241022   . "anthropic.claude-3-5-haiku-20241022-v1:0")
